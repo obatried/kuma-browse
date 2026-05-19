@@ -76,7 +76,9 @@ The `--autoConnect` server needs Chrome to be willing to accept a debugging sess
 3. Toggle **Discover network targets** (or the equivalent remote-debugging switch) **on**.
 4. No restart needed.
 
-**Don't try** `--remote-debugging-port=9222` on the default profile. Chrome 136 and later silently refuse that flag on the default profile for security reasons. The `chrome://inspect` toggle is the supported path.
+**Don't try** `--remote-debugging-port=9222` on the default profile. Chrome 136 and later silently refuse that flag on the default profile for security reasons — Chrome will appear to launch with the flag, but `curl http://127.0.0.1:9222/json/version` returns nothing because the CDP endpoint never actually opens. The `chrome://inspect` toggle is the supported path.
+
+**Also don't try to verify setup by curling port 9222.** With the toggle on, you *will* see something listening on `127.0.0.1:9222` — but `/json/version` returns empty. That's because the toggle enables Chrome's *device-discovery* server on 9222, while `--autoConnect` uses a separate Chrome-internal attach mechanism that the toggle ALSO gates. The supported way to verify your setup worked is to make a tool call from your agent and see Chrome's permission dialog appear. If the dialog comes up and you click Allow, you're connected. Don't go chasing /json/version — wrong endpoint, won't help.
 
 ## First connect
 
@@ -136,6 +138,21 @@ ta.dispatchEvent(new Event('input', { bubbles: true }));
 Single-line `<input>` usually works fine; the trick is for controlled multi-line textareas and contenteditable editors (LinkedIn DMs, etc).
 
 **Old `--remote-debugging-port=9222` flag.** Doesn't work on the default profile in Chrome 136+. Use the `chrome://inspect` toggle instead. The flag still works on a non-default `--user-data-dir`, but then you lose your logins, which defeats the point.
+
+**MCP server fails to start with `-32000` / "Connection closed" / no clear error.** Likely a `PATH` issue. Some MCP clients (or certain launch contexts — GUI apps launched from Finder rather than a terminal, for example) spawn subprocesses with a minimal PATH like `/usr/bin:/bin:/usr/sbin:/sbin`. If your `node` is on Homebrew (`/opt/homebrew/bin/node`), it isn't on that minimal PATH, and `npx` (which shebangs `#!/usr/bin/env node`) dies before printing anything useful. Fix is to give the MCP entry its own `env` block with a real PATH:
+
+```json
+"chrome-devtools": {
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "chrome-devtools-mcp@latest", "--autoConnect"],
+  "env": {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  }
+}
+```
+
+If your client inherits your shell PATH (most terminal-launched clients do), you don't need this. If it doesn't, this is what unblocks it. To check whether your client needs it, run `env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin which npx` — if that returns "not found," your client likely needs the override.
 
 ## Troubleshooting
 
